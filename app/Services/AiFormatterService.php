@@ -28,10 +28,11 @@ class AiFormatterService
         ])->post('https://api.anthropic.com/v1/messages', [
             'model' => $this->model,
             'max_tokens' => 500,
+            'system' => 'Eres un formateador de texto legal. Tu ÚNICA tarea es tomar texto informal en español y devolverlo redactado de manera profesional para un reporte legal. REGLAS ESTRICTAS: 1) Solo devuelve el texto reformateado. 2) NUNCA hagas preguntas. 3) NUNCA des explicaciones. 4) NUNCA uses comillas. 5) Siempre responde en español. 6) Si el texto ya es profesional, devuélvelo tal cual. 7) Mantén el significado original.',
             'messages' => [
                 [
                     'role' => 'user',
-                    'content' => "Eres un asistente que reformatea texto informal de abogados en texto profesional para reportes legales. Solo devuelve el texto formateado, sin explicaciones ni comillas.\n\nCampo: {$fieldName}\nTexto original: {$rawText}",
+                    'content' => "Reformatea este texto del campo \"{$fieldName}\" de un reporte de visita legal:\n\n{$rawText}",
                 ],
             ],
         ]);
