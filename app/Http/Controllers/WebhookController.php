@@ -13,7 +13,7 @@ class WebhookController extends Controller
     {
         $payload = $request->all();
 
-        Log::error('WEBHOOK RECEIVED', ['event' => $payload['event'] ?? 'none', 'payload_keys' => array_keys($payload)]);
+        Log::error('WEBHOOK FULL PAYLOAD', ['payload' => json_encode($payload)]);
 
         if (($payload['event'] ?? '') !== 'message') {
             return response()->json(['ok' => true]);
