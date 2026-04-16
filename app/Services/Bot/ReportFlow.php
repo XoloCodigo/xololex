@@ -141,8 +141,9 @@ class ReportFlow
         $pdfUrl = asset('storage/' . $report->pdf_path);
         $this->waha->sendDocument($phone, $pdfUrl, "Reporte_{$report->folio}.pdf", "Reporte {$report->folio} generado.");
 
-        // Subir PDF a SharePoint
+        // Subir PDF y Word a SharePoint
         $sharepointUrl = $this->sharepoint->uploadFile($report->pdf_path, "{$report->folio}.pdf");
+        $this->sharepoint->uploadFile($report->word_path, "{$report->folio}.docx");
         if ($sharepointUrl) {
             $report->update(['sharepoint_url' => $sharepointUrl]);
         }
