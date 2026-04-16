@@ -40,6 +40,11 @@ class BotHandler
             return;
         }
 
+        if ($this->isEdit($message) && ! $conversation->isIdle()) {
+            $this->goBack($conversation, $phone);
+            return;
+        }
+
         match ($conversation->flow) {
             'idle' => $this->handleMenu($conversation, $phone, $message, $lawyer),
             'report' => $this->reportFlow->handle($conversation, $phone, $message),
@@ -81,5 +86,78 @@ class BotHandler
     protected function isCancel(string $message): bool
     {
         return in_array(strtolower($message), ['cancelar', 'salir', 'cancel', '0']);
+    }
+
+    protected function isEdit(string $message): bool
+    {
+        return in_array(strtolower(trim($message)), ['editar', 'corregir', 'edit', 'atras', 'atrás']);
+    }
+
+    protected function goBack(Conversation $conversation, string $phone): void
+    {
+        $stepsMap = [
+            'report' => [
+                'receive_company', 'receive_visit_date', 'receive_visit_reason',
+                'receive_contact', 'receive_contact_position', 'receive_findings',
+                'receive_risks', 'receive_recommendations', 'receive_observations',
+            ],
+            'form' => [
+                'receive_report', 'receive_service_type', 'receive_activity_date',
+                'receive_start_time', 'receive_end_time', 'receive_extra_hours',
+                'receive_activity_type', 'receive_description', 'receive_observations',
+            ],
+        ];
+
+        $flow = $conversation->flow;
+        $steps = $stepsMap[$flow] ?? [];
+        $currentIndex = array_search($conversation->step, $steps);
+
+        if ($currentIndex === false || $currentIndex === 0) {
+            $this->waha->sendText($phone, "Ya estás en la primera pregunta. No puedo retroceder más.");
+            return;
+        }
+
+        $previousStep = $steps[$currentIndex - 1];
+
+        // Quitar la data del paso actual del array
+        $data = $conversation->data ?? [];
+        $dataKeyMap = [
+            'receive_company' => 'company_name',
+            'receive_visit_date' => 'visit_date',
+            'receive_visit_reason' => 'visit_reason',
+            'receive_contact' => 'contact_met',
+            'receive_contact_position' => 'contact_position',
+            'receive_findings' => 'findings',
+            'receive_risks' => 'risks',
+            'receive_recommendations' => 'recommendations',
+            'receive_observations' => 'observations',
+            'receive_report' => 'report_id',
+            'receive_service_type' => 'service_type',
+            'receive_activity_date' => 'activity_date',
+            'receive_start_time' => 'start_time',
+            'receive_end_time' => 'end_time',
+            'receive_extra_hours' => 'extra_hours',
+            'receive_activity_type' => 'activity_type',
+            'receive_description' => 'description',
+        ];
+
+        // Quitar la data del paso actual
+        $keyToRemove = $dataKeyMap[$conversation->step] ?? null;
+        if ($keyToRemove) {
+            unset($data[$keyToRemove]);
+        }
+
+        $conversation->update([
+            'step' => $previousStep,
+            'data' => $data,
+        ]);
+
+        $this->waha->sendText($phone, "⬅ Volviendo a la pregunta anterior...");
+
+        // Re-ejecutar el paso anterior para mostrar la pregunta
+        match ($flow) {
+            'report' => $this->reportFlow->handle($conversation->fresh(), $phone, ''),
+            'form' => $this->formFlow->handle($conversation->fresh(), $phone, ''),
+        };
     }
 }

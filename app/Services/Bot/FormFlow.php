@@ -79,7 +79,7 @@ class FormFlow
         $option = (int) $message;
 
         if (! isset($types[$option])) {
-            $this->waha->sendText($phone, "Opción no válida. Escribe 1, 2 o 3.");
+            $this->waha->sendText($phone, "Tipo de servicio:\n\n1. Opción 1\n2. Opción 2\n3. Opción 3\n\n_Escribe el número_");
             return;
         }
 
@@ -90,6 +90,11 @@ class FormFlow
     protected function receiveActivityDate(Conversation $conversation, string $phone, string $message): void
     {
         $message = strtolower(trim($message));
+
+        if ($message === '') {
+            $this->waha->sendText($phone, "¿Fecha de la actividad?\n\n_Escribe la fecha (ej: 16/04/2026) o \"hoy\"_");
+            return;
+        }
 
         if ($message === 'hoy') {
             $date = now()->format('Y-m-d');
@@ -142,6 +147,10 @@ class FormFlow
 
     protected function receiveExtraHours(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "¿Horas fuera de jornada laboral?\n\n_Escribe el número (ej: 1.5) o \"0\" si no aplica_");
+            return;
+        }
         $conversation->setStep('form', 'receive_activity_type', ['extra_hours' => trim($message)]);
         $this->waha->sendText($phone, "Tipo de actividad:\n\n1. Opción 1\n2. Opción 2\n3. Opción 3\n\n_Escribe el número_");
     }
@@ -162,6 +171,10 @@ class FormFlow
 
     protected function receiveDescription(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "Describe brevemente la actividad realizada:");
+            return;
+        }
         $conversation->setStep('form', 'receive_observations', ['description' => $message]);
         $this->waha->sendText($phone, "¿Observaciones? (escribe \"ninguna\" si no hay)");
     }

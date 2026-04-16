@@ -46,7 +46,7 @@ class ReportFlow
         $companyName = trim($message);
 
         if (strlen($companyName) < 2) {
-            $this->waha->sendText($phone, "Escribe el nombre de la empresa.");
+            $this->waha->sendText($phone, "¿A qué empresa visitaste?\n\n_Escribe el nombre de la empresa_");
             return;
         }
 
@@ -60,6 +60,11 @@ class ReportFlow
     protected function receiveVisitDate(Conversation $conversation, string $phone, string $message): void
     {
         $message = strtolower(trim($message));
+
+        if ($message === '') {
+            $this->waha->sendText($phone, "¿Cuándo fue la visita?\n\n_Escribe la fecha (ej: 15/04/2026) o \"hoy\"_");
+            return;
+        }
 
         if ($message === 'hoy') {
             $date = now()->format('Y-m-d');
@@ -78,42 +83,70 @@ class ReportFlow
 
     protected function receiveVisitReason(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "¿Cuál fue el motivo de la visita?");
+            return;
+        }
         $conversation->setStep('report', 'receive_contact', ['visit_reason' => $message]);
         $this->waha->sendText($phone, "¿Con quién te reuniste? (nombre)");
     }
 
     protected function receiveContact(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "¿Con quién te reuniste? (nombre)");
+            return;
+        }
         $conversation->setStep('report', 'receive_contact_position', ['contact_met' => $message]);
         $this->waha->sendText($phone, "¿Cuál es su puesto?");
     }
 
     protected function receiveContactPosition(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "¿Cuál es su puesto?");
+            return;
+        }
         $conversation->setStep('report', 'receive_findings', ['contact_position' => $message]);
         $this->waha->sendText($phone, "Describe los hallazgos principales de la visita:");
     }
 
     protected function receiveFindings(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "Describe los hallazgos principales de la visita:");
+            return;
+        }
         $conversation->setStep('report', 'receive_risks', ['findings' => $message]);
         $this->waha->sendText($phone, "¿Hay riesgos detectados? (escribe \"ninguno\" si no aplica)");
     }
 
     protected function receiveRisks(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "¿Hay riesgos detectados? (escribe \"ninguno\" si no aplica)");
+            return;
+        }
         $conversation->setStep('report', 'receive_recommendations', ['risks' => $message]);
         $this->waha->sendText($phone, "¿Cuáles son tus recomendaciones?");
     }
 
     protected function receiveRecommendations(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "¿Cuáles son tus recomendaciones?");
+            return;
+        }
         $conversation->setStep('report', 'receive_observations', ['recommendations' => $message]);
         $this->waha->sendText($phone, "¿Observaciones adicionales? (escribe \"ninguna\" si no hay)");
     }
 
     protected function receiveObservations(Conversation $conversation, string $phone, string $message): void
     {
+        if (trim($message) === '') {
+            $this->waha->sendText($phone, "¿Observaciones adicionales? (escribe \"ninguna\" si no hay)");
+            return;
+        }
         $data = array_merge($conversation->data ?? [], ['observations' => $message]);
 
         $this->waha->sendText($phone, "Formateando y generando tu reporte...");
