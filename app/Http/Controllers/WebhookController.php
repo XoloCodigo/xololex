@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\Bot\BotHandler;
 use App\Services\WahaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class WebhookController extends Controller
 {
@@ -17,6 +18,12 @@ class WebhookController extends Controller
         }
 
         if (($payload['payload']['fromMe'] ?? false) === true) {
+            return response()->json(['ok' => true]);
+        }
+
+        // Deduplicar mensajes por ID
+        $messageId = $payload['payload']['id'] ?? null;
+        if ($messageId && ! Cache::add("waha_msg:{$messageId}", true, 60)) {
             return response()->json(['ok' => true]);
         }
 

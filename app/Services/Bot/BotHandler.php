@@ -69,7 +69,7 @@ class BotHandler
 
     protected function sendWelcome(string $phone, string $name): void
     {
-        $this->waha->sendText($phone, "¡Hola {$name}! 👋 Soy *XoloLex*, tu asistente legal.\n\nTe ayudo a:\n• *Generar reportes de visita* — Te guío con preguntas y genero el Word/PDF automáticamente.\n• *Llenar formularios de seguimiento* — Registro tu actividad directo en SharePoint.\n\nEscribe *\"cancelar\"* o *\"0\"* en cualquier momento para reiniciar.");
+        $this->waha->sendText($phone, "¡Hola {$name}! 👋 Soy *XoloLex*, tu asistente legal.\n\nTe ayudo a:\n• *Generar reportes de visita* — Te guío con preguntas y genero el Word/PDF automáticamente.\n• *Llenar formularios de seguimiento* — Registro tu actividad directo en SharePoint.\n\n_Si en algún momento quieres cancelar un flujo, escribe \"cancelar\" o \"0\"._");
         $this->sendMenu($phone, $name);
     }
 
