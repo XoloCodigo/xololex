@@ -4,13 +4,14 @@ namespace App\Services\Bot;
 
 use App\Models\Conversation;
 use App\Models\Report;
-use App\Models\SharepointForm;
+use App\Services\SharePointService;
 use App\Services\WahaService;
 
 class FormFlow
 {
     public function __construct(
         protected WahaService $waha,
+        protected SharePointService $sharepoint,
     ) {}
 
     public function handle(Conversation $conversation, string $phone, string $message): void
@@ -18,13 +19,14 @@ class FormFlow
         match ($conversation->step) {
             'ask_report' => $this->askReport($conversation, $phone),
             'receive_report' => $this->receiveReport($conversation, $phone, $message),
-            'ask_service_type' => $this->askServiceType($conversation, $phone),
             'receive_service_type' => $this->receiveServiceType($conversation, $phone, $message),
-            'receive_hours' => $this->receiveHours($conversation, $phone, $message),
-            'receive_urgency' => $this->receiveUrgency($conversation, $phone, $message),
-            'receive_followup' => $this->receiveFollowup($conversation, $phone, $message),
-            'receive_followup_date' => $this->receiveFollowupDate($conversation, $phone, $message),
-            'receive_notes' => $this->receiveNotes($conversation, $phone, $message),
+            'receive_activity_date' => $this->receiveActivityDate($conversation, $phone, $message),
+            'receive_start_time' => $this->receiveStartTime($conversation, $phone, $message),
+            'receive_end_time' => $this->receiveEndTime($conversation, $phone, $message),
+            'receive_extra_hours' => $this->receiveExtraHours($conversation, $phone, $message),
+            'receive_activity_type' => $this->receiveActivityType($conversation, $phone, $message),
+            'receive_description' => $this->receiveDescription($conversation, $phone, $message),
+            'receive_observations' => $this->receiveObservations($conversation, $phone, $message),
             default => $this->askReport($conversation, $phone),
         };
     }
@@ -32,18 +34,17 @@ class FormFlow
     protected function askReport(Conversation $conversation, string $phone): void
     {
         $reports = Report::where('lawyer_id', $conversation->lawyer_id)
-            ->whereDoesntHave('sharepointForm')
             ->latest()
             ->take(10)
             ->get();
 
         if ($reports->isEmpty()) {
-            $this->waha->sendText($phone, "No tienes reportes pendientes de formulario. Primero crea un reporte.");
+            $this->waha->sendText($phone, "No tienes reportes. Primero crea un reporte de visita.");
             $conversation->reset();
             return;
         }
 
-        $list = $reports->map(fn ($r, $i) => ($i + 1) . ". {$r->folio} — {$r->company->name} ({$r->visit_date->format('d/m/Y')})")->implode("\n");
+        $list = $reports->map(fn ($r, $i) => ($i + 1) . ". {$r->folio} — {$r->company_name} ({$r->visit_date->format('d/m/Y')})")->implode("\n");
 
         $this->waha->sendText($phone, "¿Para cuál reporte quieres llenar el formulario?\n\n{$list}\n\n_Escribe el número_");
         $conversation->setStep('form', 'receive_report', [
@@ -62,113 +63,140 @@ class FormFlow
         }
 
         $report = Report::find($reportIds[$index]);
-        $conversation->setStep('form', 'ask_service_type', [
+        $conversation->setStep('form', 'receive_service_type', [
             'report_id' => $report->id,
-            'company_id' => $report->company_id,
+            'folio' => $report->folio,
+            'company_name' => $report->company_name,
         ]);
         $conversation->update(['report_id' => $report->id]);
 
-        $this->askServiceType($conversation->fresh(), $phone);
-    }
-
-    protected function askServiceType(Conversation $conversation, string $phone): void
-    {
-        $this->waha->sendText($phone, "Tipo de servicio realizado:\n\n1. Auditoría\n2. Consultoría\n3. Revisión documental\n4. Capacitación\n5. Otro\n\n_Escribe el número_");
-        $conversation->setStep('form', 'receive_service_type');
+        $this->waha->sendText($phone, "Tipo de servicio:\n\n1. Opción 1\n2. Opción 2\n3. Opción 3\n\n_Escribe el número_");
     }
 
     protected function receiveServiceType(Conversation $conversation, string $phone, string $message): void
     {
-        $types = [1 => 'auditoria', 2 => 'consultoria', 3 => 'revision_documental', 4 => 'capacitacion', 5 => 'otro'];
+        $types = [1 => 'Opción 1', 2 => 'Opción 2', 3 => 'Opción 3'];
         $option = (int) $message;
 
         if (! isset($types[$option])) {
-            $this->waha->sendText($phone, "Opción no válida. Escribe un número del 1 al 5.");
+            $this->waha->sendText($phone, "Opción no válida. Escribe 1, 2 o 3.");
             return;
         }
 
-        $conversation->setStep('form', 'receive_hours', ['service_type' => $types[$option]]);
-        $this->waha->sendText($phone, "¿Cuántas horas dedicaste? (ej: 2.5)");
+        $conversation->setStep('form', 'receive_activity_date', ['service_type' => $types[$option]]);
+        $this->waha->sendText($phone, "¿Fecha de la actividad?\n\n_Escribe la fecha (ej: 16/04/2026) o \"hoy\"_");
     }
 
-    protected function receiveHours(Conversation $conversation, string $phone, string $message): void
+    protected function receiveActivityDate(Conversation $conversation, string $phone, string $message): void
     {
-        $hours = str_replace(',', '.', $message);
+        $message = strtolower(trim($message));
 
-        if (! is_numeric($hours) || $hours <= 0) {
-            $this->waha->sendText($phone, "Escribe un número válido de horas (ej: 3 o 2.5)");
+        if ($message === 'hoy') {
+            $date = now()->format('Y-m-d');
+        } else {
+            try {
+                $date = \Carbon\Carbon::createFromFormat('d/m/Y', $message)->format('Y-m-d');
+            } catch (\Exception $e) {
+                $this->waha->sendText($phone, "Formato no válido. Usa dd/mm/aaaa o escribe \"hoy\".");
+                return;
+            }
+        }
+
+        $conversation->setStep('form', 'receive_start_time', ['activity_date' => $date]);
+        $this->waha->sendText($phone, "¿Hora de inicio?\n\n_Escribe en formato HH:MM (ej: 09:00)_");
+    }
+
+    protected function receiveStartTime(Conversation $conversation, string $phone, string $message): void
+    {
+        $time = trim($message);
+
+        if (! preg_match('/^\d{1,2}:\d{2}$/', $time)) {
+            $this->waha->sendText($phone, "Formato no válido. Escribe la hora como HH:MM (ej: 09:00).");
             return;
         }
 
-        $conversation->setStep('form', 'receive_urgency', ['hours_spent' => (float) $hours]);
-        $this->waha->sendText($phone, "Nivel de urgencia de los hallazgos:\n\n1. Bajo\n2. Medio\n3. Alto\n4. Crítico\n\n_Escribe el número_");
+        $conversation->setStep('form', 'receive_end_time', ['start_time' => $time]);
+        $this->waha->sendText($phone, "¿Hora de fin?\n\n_Escribe en formato HH:MM (ej: 13:00)_");
     }
 
-    protected function receiveUrgency(Conversation $conversation, string $phone, string $message): void
+    protected function receiveEndTime(Conversation $conversation, string $phone, string $message): void
     {
-        $levels = [1 => 'bajo', 2 => 'medio', 3 => 'alto', 4 => 'critico'];
+        $time = trim($message);
+
+        if (! preg_match('/^\d{1,2}:\d{2}$/', $time)) {
+            $this->waha->sendText($phone, "Formato no válido. Escribe la hora como HH:MM (ej: 13:00).");
+            return;
+        }
+
+        $startTime = $conversation->data['start_time'] ?? '00:00';
+        $start = \Carbon\Carbon::createFromFormat('H:i', $startTime);
+        $end = \Carbon\Carbon::createFromFormat('H:i', $time);
+        $duration = $start->diffInMinutes($end) / 60;
+
+        $conversation->setStep('form', 'receive_extra_hours', [
+            'end_time' => $time,
+            'duration' => round($duration, 2),
+        ]);
+        $this->waha->sendText($phone, "¿Horas fuera de jornada laboral?\n\n_Escribe el número (ej: 1.5) o \"0\" si no aplica_");
+    }
+
+    protected function receiveExtraHours(Conversation $conversation, string $phone, string $message): void
+    {
+        $conversation->setStep('form', 'receive_activity_type', ['extra_hours' => trim($message)]);
+        $this->waha->sendText($phone, "Tipo de actividad:\n\n1. Opción 1\n2. Opción 2\n3. Opción 3\n\n_Escribe el número_");
+    }
+
+    protected function receiveActivityType(Conversation $conversation, string $phone, string $message): void
+    {
+        $types = [1 => 'Opción 1', 2 => 'Opción 2', 3 => 'Opción 3'];
         $option = (int) $message;
 
-        if (! isset($levels[$option])) {
-            $this->waha->sendText($phone, "Opción no válida. Escribe un número del 1 al 4.");
+        if (! isset($types[$option])) {
+            $this->waha->sendText($phone, "Opción no válida. Escribe 1, 2 o 3.");
             return;
         }
 
-        $conversation->setStep('form', 'receive_followup', ['urgency_level' => $levels[$option]]);
-        $this->waha->sendText($phone, "¿Requiere visita de seguimiento?\n\n1. Sí\n2. No");
+        $conversation->setStep('form', 'receive_description', ['activity_type' => $types[$option]]);
+        $this->waha->sendText($phone, "Describe brevemente la actividad realizada:");
     }
 
-    protected function receiveFollowup(Conversation $conversation, string $phone, string $message): void
+    protected function receiveDescription(Conversation $conversation, string $phone, string $message): void
     {
-        $option = strtolower(trim($message));
-
-        if (in_array($option, ['1', 'sí', 'si'])) {
-            $conversation->setStep('form', 'receive_followup_date', ['requires_followup' => true]);
-            $this->waha->sendText($phone, "¿Para cuándo? (dd/mm/aaaa)");
-        } elseif (in_array($option, ['2', 'no'])) {
-            $conversation->setStep('form', 'receive_notes', ['requires_followup' => false]);
-            $this->waha->sendText($phone, "¿Notas adicionales? (escribe \"ninguna\" si no hay)");
-        } else {
-            $this->waha->sendText($phone, "Escribe 1 (Sí) o 2 (No).");
-        }
+        $conversation->setStep('form', 'receive_observations', ['description' => $message]);
+        $this->waha->sendText($phone, "¿Observaciones? (escribe \"ninguna\" si no hay)");
     }
 
-    protected function receiveFollowupDate(Conversation $conversation, string $phone, string $message): void
-    {
-        try {
-            $date = \Carbon\Carbon::createFromFormat('d/m/Y', $message)->format('Y-m-d');
-        } catch (\Exception $e) {
-            $this->waha->sendText($phone, "Formato no válido. Usa dd/mm/aaaa.");
-            return;
-        }
-
-        $conversation->setStep('form', 'receive_notes', ['followup_date' => $date]);
-        $this->waha->sendText($phone, "¿Notas adicionales? (escribe \"ninguna\" si no hay)");
-    }
-
-    protected function receiveNotes(Conversation $conversation, string $phone, string $message): void
+    protected function receiveObservations(Conversation $conversation, string $phone, string $message): void
     {
         $data = array_merge($conversation->data ?? [], [
-            'additional_notes' => strtolower($message) === 'ninguna' ? null : $message,
+            'observations' => strtolower(trim($message)) === 'ninguna' ? '' : $message,
         ]);
 
-        $form = SharepointForm::create([
-            'report_id' => $data['report_id'],
-            'lawyer_id' => $conversation->lawyer_id,
-            'company_id' => $data['company_id'],
-            'service_type' => $data['service_type'],
-            'hours_spent' => $data['hours_spent'],
-            'urgency_level' => $data['urgency_level'],
-            'requires_followup' => $data['requires_followup'] ?? false,
-            'followup_date' => $data['followup_date'] ?? null,
-            'additional_notes' => $data['additional_notes'],
-            'status' => 'completed',
-        ]);
+        $this->waha->sendText($phone, "Registrando en SharePoint...");
+
+        $activityDate = $data['activity_date'];
+        $fields = [
+            'Title' => $data['folio'],
+            'Cliente_x002f_Empresa' => $data['company_name'],
+            'TipodeServicio' => $data['service_type'],
+            'Fechadeactividad' => $activityDate,
+            'Horadeinicio' => "{$activityDate}T{$data['start_time']}:00Z",
+            'HoraFin' => "{$activityDate}T{$data['end_time']}:00Z",
+            'Duraci_x00f3_n' => $data['duration'],
+            'Horasfueradejordanalaboral' => $data['extra_hours'],
+            'Tipodeactividad' => $data['activity_type'],
+            'Descripci_x00f3_n' => $data['description'],
+            'Observaciones' => $data['observations'],
+        ];
+
+        $result = $this->sharepoint->insertListItem($fields);
 
         $conversation->reset();
 
-        $report = Report::find($data['report_id']);
-
-        $this->waha->sendText($phone, "✓ Formulario completado para reporte {$report->folio}\n\n*Resumen:*\n• Servicio: {$data['service_type']}\n• Horas: {$data['hours_spent']}\n• Urgencia: {$data['urgency_level']}\n• Seguimiento: " . ($data['requires_followup'] ? 'Sí' : 'No') . "\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+        if ($result) {
+            $this->waha->sendText($phone, "✓ Formulario registrado en SharePoint para reporte {$data['folio']}\n\n*Resumen:*\n• Empresa: {$data['company_name']}\n• Servicio: {$data['service_type']}\n• Fecha: {$activityDate}\n• Horario: {$data['start_time']} - {$data['end_time']}\n• Duración: {$data['duration']} hrs\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+        } else {
+            $this->waha->sendText($phone, "⚠ Hubo un error al registrar en SharePoint. Los datos se guardaron localmente. Contacta al administrador.\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+        }
     }
 }

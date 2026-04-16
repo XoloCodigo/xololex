@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Report;
 use App\Services\AiFormatterService;
 use App\Services\ReportGeneratorService;
+use App\Services\SharePointService;
 use App\Services\WahaService;
 
 class ReportFlow
@@ -14,6 +15,7 @@ class ReportFlow
         protected WahaService $waha,
         protected ReportGeneratorService $generator,
         protected AiFormatterService $aiFormatter,
+        protected SharePointService $sharepoint,
     ) {}
 
     public function handle(Conversation $conversation, string $phone, string $message): void
@@ -139,8 +141,16 @@ class ReportFlow
         $pdfUrl = asset('storage/' . $report->pdf_path);
         $this->waha->sendDocument($phone, $pdfUrl, "Reporte_{$report->folio}.pdf", "Reporte {$report->folio} generado.");
 
+        // Subir PDF a SharePoint
+        $sharepointUrl = $this->sharepoint->uploadFile($report->pdf_path, "{$report->folio}.pdf");
+        if ($sharepointUrl) {
+            $report->update(['sharepoint_url' => $sharepointUrl]);
+        }
+
         $conversation->update(['report_id' => $report->id]);
         $conversation->reset();
-        $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado y listo.\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+
+        $spMsg = $sharepointUrl ? "\n📁 PDF subido a SharePoint" : "";
+        $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado y listo.{$spMsg}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
     }
 }
