@@ -74,7 +74,7 @@ class BotHandler
 
     protected function sendWelcome(string $phone, string $name): void
     {
-        $this->waha->sendText($phone, "¡Hola {$name}! 👋 Soy *XoloLex*, tu asistente legal.\n\nTe ayudo a:\n• *Generar reportes de visita* — Te guío con preguntas y genero el Word/PDF automáticamente.\n• *Llenar formularios de seguimiento* — Registro tu actividad directo en SharePoint.\n\n_Si en algún momento quieres cancelar un flujo, escribe \"cancelar\" o \"0\"._");
+        $this->waha->sendText($phone, "¡Hola {$name}! 👋 Soy *XoloLex*, tu asistente legal.\n\nTe ayudo a:\n• *Generar reportes de visita* — Te guío con preguntas y genero el Word/PDF automáticamente.\n• *Llenar formularios de seguimiento* — Registro tu actividad directo en SharePoint.\n\n_Escribe \"cancelar\" para reiniciar o \"editar\" para corregir tu respuesta anterior._");
         $this->sendMenu($phone, $name);
     }
 
@@ -85,7 +85,7 @@ class BotHandler
 
     protected function isCancel(string $message): bool
     {
-        return in_array(strtolower($message), ['cancelar', 'salir', 'cancel', '0']);
+        return in_array(strtolower(trim($message)), ['cancelar', 'salir', 'cancel']);
     }
 
     protected function isEdit(string $message): bool
