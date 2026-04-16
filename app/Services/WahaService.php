@@ -62,7 +62,43 @@ class WahaService
 
     public static function extractPhone(array $payload): string
     {
-        return str_replace('@c.us', '', $payload['payload']['from'] ?? '');
+        $from = $payload['payload']['from'] ?? '';
+
+        // Si viene en formato LID, resolver via API de WAHA
+        if (str_contains($from, '@lid')) {
+            $contact = self::resolveContact($from);
+            if ($contact) {
+                return $contact;
+            }
+        }
+
+        return str_replace('@c.us', '', $from);
+    }
+
+    protected static function resolveContact(string $lid): ?string
+    {
+        $baseUrl = rtrim(config('services.waha.url'), '/');
+        $apiKey = config('services.waha.api_key', '');
+        $session = config('services.waha.session', 'default');
+
+        try {
+            $response = Http::withHeaders(['X-Api-Key' => $apiKey])
+                ->get("{$baseUrl}/api/contacts", [
+                    'session' => $session,
+                    'contactId' => $lid,
+                ]);
+
+            if ($response->successful()) {
+                $number = $response->json('number');
+                if ($number) {
+                    return $number;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fall through
+        }
+
+        return null;
     }
 
     public static function extractMessage(array $payload): string

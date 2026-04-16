@@ -24,7 +24,7 @@ class DatabaseSeeder extends Seeder
 
         Lawyer::create([
             'name' => 'Ricardo (Prueba)',
-            'phone' => '524271513500',
+            'phone' => '5214271513500',
             'email' => 'ricardo96.mgz@gmail.com',
             'is_active' => true,
         ]);
