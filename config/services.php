@@ -41,6 +41,11 @@ return [
         'api_key' => env('WAHA_API_KEY', ''),
     ],
 
+    'anthropic' => [
+        'api_key' => env('ANTHROPIC_API_KEY'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001'),
+    ],
+
     'microsoft' => [
         'tenant_id' => env('MS_TENANT_ID'),
         'client_id' => env('MS_CLIENT_ID'),

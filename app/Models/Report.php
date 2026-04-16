@@ -11,7 +11,7 @@ class Report extends Model
     protected $fillable = [
         'folio',
         'lawyer_id',
-        'company_id',
+        'company_name',
         'visit_reason',
         'contact_met',
         'contact_position',
@@ -40,12 +40,7 @@ class Report extends Model
         return $this->belongsTo(Lawyer::class);
     }
 
-    public function company(): BelongsTo
-    {
-        return $this->belongsTo(Company::class);
-    }
-
-    public function sharepointForm(): HasOne
+public function sharepointForm(): HasOne
     {
         return $this->hasOne(SharepointForm::class);
     }

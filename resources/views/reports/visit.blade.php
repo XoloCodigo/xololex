@@ -32,7 +32,7 @@
         </div>
         <div class="info-row">
             <div class="info-label">Empresa visitada:</div>
-            <div class="info-value">{{ $report->company->name }}</div>
+            <div class="info-value">{{ $report->company_name }}</div>
         </div>
         <div class="info-row">
             <div class="info-label">Contacto:</div>

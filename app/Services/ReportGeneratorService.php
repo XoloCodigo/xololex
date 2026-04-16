@@ -12,7 +12,7 @@ class ReportGeneratorService
 {
     public function generate(Report $report): array
     {
-        $report->load(['lawyer', 'company']);
+        $report->load(['lawyer']);
 
         $wordPath = $this->generateWord($report);
         $pdfPath = $this->generatePdf($report);
@@ -40,7 +40,7 @@ class ReportGeneratorService
         // Info general
         $this->addField($section, 'Fecha de visita', $report->visit_date->format('d/m/Y'));
         $this->addField($section, 'Abogado', $report->lawyer->name);
-        $this->addField($section, 'Empresa visitada', $report->company->name);
+        $this->addField($section, 'Empresa visitada', $report->company_name);
         $this->addField($section, 'Contacto', "{$report->contact_met} — {$report->contact_position}");
         $section->addTextBreak(1);
 

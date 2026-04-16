@@ -2,9 +2,9 @@
 
 namespace App\Services\Bot;
 
-use App\Models\Company;
 use App\Models\Conversation;
 use App\Models\Report;
+use App\Services\AiFormatterService;
 use App\Services\ReportGeneratorService;
 use App\Services\WahaService;
 
@@ -13,6 +13,7 @@ class ReportFlow
     public function __construct(
         protected WahaService $waha,
         protected ReportGeneratorService $generator,
+        protected AiFormatterService $aiFormatter,
     ) {}
 
     public function handle(Conversation $conversation, string $phone, string $message): void
@@ -34,34 +35,21 @@ class ReportFlow
 
     protected function askCompany(Conversation $conversation, string $phone): void
     {
-        $companies = Company::where('is_active', true)->orderBy('name')->get();
-
-        if ($companies->isEmpty()) {
-            $this->waha->sendText($phone, "No hay empresas registradas. Contacta al administrador.");
-            $conversation->reset();
-            return;
-        }
-
-        $list = $companies->map(fn ($c, $i) => ($i + 1) . ". {$c->name}")->implode("\n");
-
-        $this->waha->sendText($phone, "¿A qué empresa visitaste?\n\n{$list}\n\n_Escribe el número_");
-        $conversation->setStep('report', 'receive_company', [
-            'company_ids' => $companies->pluck('id')->toArray(),
-        ]);
+        $this->waha->sendText($phone, "¿A qué empresa visitaste?\n\n_Escribe el nombre de la empresa_");
+        $conversation->setStep('report', 'receive_company');
     }
 
     protected function receiveCompany(Conversation $conversation, string $phone, string $message): void
     {
-        $index = (int) $message - 1;
-        $companyIds = $conversation->data['company_ids'] ?? [];
+        $companyName = trim($message);
 
-        if (! isset($companyIds[$index])) {
-            $this->waha->sendText($phone, "Opción no válida. Escribe el número de la empresa.");
+        if (strlen($companyName) < 2) {
+            $this->waha->sendText($phone, "Escribe el nombre de la empresa.");
             return;
         }
 
         $conversation->setStep('report', 'receive_visit_date', [
-            'company_id' => $companyIds[$index],
+            'company_name' => $companyName,
         ]);
 
         $this->waha->sendText($phone, "¿Cuándo fue la visita?\n\n_Escribe la fecha (ej: 15/04/2026) o \"hoy\"_");
@@ -126,12 +114,14 @@ class ReportFlow
     {
         $data = array_merge($conversation->data ?? [], ['observations' => $message]);
 
-        $this->waha->sendText($phone, "Generando tu reporte...");
+        $this->waha->sendText($phone, "Formateando y generando tu reporte...");
+
+        $data = $this->aiFormatter->formatReport($data);
 
         $report = Report::create([
             'folio' => Report::generateFolio(),
             'lawyer_id' => $conversation->lawyer_id,
-            'company_id' => $data['company_id'],
+            'company_name' => $data['company_name'],
             'visit_reason' => $data['visit_reason'],
             'contact_met' => $data['contact_met'],
             'contact_position' => $data['contact_position'],
@@ -149,21 +139,8 @@ class ReportFlow
         $pdfUrl = asset('storage/' . $report->pdf_path);
         $this->waha->sendDocument($phone, $pdfUrl, "Reporte_{$report->folio}.pdf", "Reporte {$report->folio} generado.");
 
-        $doFormAfter = $data['do_form_after'] ?? false;
-
-        if ($doFormAfter) {
-            $conversation->update([
-                'flow' => 'form',
-                'step' => 'ask_service_type',
-                'report_id' => $report->id,
-                'data' => ['company_id' => $data['company_id'], 'report_id' => $report->id],
-            ]);
-            $this->waha->sendText($phone, "Reporte listo. Ahora vamos con el formulario de seguimiento.");
-            app(FormFlow::class)->handle($conversation->fresh(), $phone, '');
-        } else {
-            $conversation->update(['report_id' => $report->id]);
-            $conversation->reset();
-            $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado y listo.\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
-        }
+        $conversation->update(['report_id' => $report->id]);
+        $conversation->reset();
+        $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado y listo.\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
     }
 }

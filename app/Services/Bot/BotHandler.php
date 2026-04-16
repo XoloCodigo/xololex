@@ -36,19 +36,19 @@ class BotHandler
         if ($this->isCancel($message)) {
             $conversation->reset();
             $this->waha->sendText($phone, "Operación cancelada. ¿En qué te puedo ayudar?");
-            $this->sendMenu($phone);
+            $this->sendMenu($phone, $lawyer->name);
             return;
         }
 
         match ($conversation->flow) {
-            'idle' => $this->handleMenu($conversation, $phone, $message),
+            'idle' => $this->handleMenu($conversation, $phone, $message, $lawyer),
             'report' => $this->reportFlow->handle($conversation, $phone, $message),
             'form' => $this->formFlow->handle($conversation, $phone, $message),
-            default => $this->handleMenu($conversation, $phone, $message),
+            default => $this->handleMenu($conversation, $phone, $message, $lawyer),
         };
     }
 
-    protected function handleMenu(Conversation $conversation, string $phone, string $message): void
+    protected function handleMenu(Conversation $conversation, string $phone, string $message, Lawyer $lawyer): void
     {
         $option = trim($message);
 
@@ -64,18 +64,18 @@ class BotHandler
             return;
         }
 
-        if (in_array($option, ['3', 'ambos'])) {
-            $conversation->setStep('report', 'ask_company', ['do_form_after' => true]);
-            $this->reportFlow->handle($conversation, $phone, $message);
-            return;
-        }
-
-        $this->sendMenu($phone);
+        $this->sendWelcome($phone, $lawyer->name);
     }
 
-    protected function sendMenu(string $phone): void
+    protected function sendWelcome(string $phone, string $name): void
     {
-        $this->waha->sendText($phone, "¿Qué quieres hacer?\n\n1. Hacer reporte de visita\n2. Llenar formulario de seguimiento\n3. Hacer ambos\n\n_Escribe el número o la opción_");
+        $this->waha->sendText($phone, "¡Hola {$name}! 👋 Soy *XoloLex*, tu asistente legal.\n\nTe ayudo a:\n• *Generar reportes de visita* — Te guío con preguntas y genero el Word/PDF automáticamente.\n• *Llenar formularios de seguimiento* — Registro tu actividad directo en SharePoint.\n\nEscribe *\"cancelar\"* o *\"0\"* en cualquier momento para reiniciar.");
+        $this->sendMenu($phone, $name);
+    }
+
+    protected function sendMenu(string $phone, string $name = ''): void
+    {
+        $this->waha->sendText($phone, "¿Qué quieres hacer?\n\n1. Hacer reporte de visita\n2. Llenar formulario de seguimiento\n\n_Escribe el número o la opción_");
     }
 
     protected function isCancel(string $message): bool
