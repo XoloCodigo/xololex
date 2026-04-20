@@ -111,11 +111,24 @@ class FormFlow
         $this->waha->sendText($phone, "¿Hora de inicio?\n\n_Escribe en formato HH:MM (ej: 09:00)_");
     }
 
+    protected function normalizeTime(string $time): ?string
+    {
+        if (! preg_match('/^(\d{1,2}):(\d{2})$/', $time, $m)) {
+            return null;
+        }
+        $h = (int) $m[1];
+        $min = (int) $m[2];
+        if ($h > 23 || $min > 59) {
+            return null;
+        }
+        return sprintf('%02d:%02d', $h, $min);
+    }
+
     protected function receiveStartTime(Conversation $conversation, string $phone, string $message): void
     {
-        $time = trim($message);
+        $time = $this->normalizeTime(trim($message));
 
-        if (! preg_match('/^\d{1,2}:\d{2}$/', $time)) {
+        if (! $time) {
             $this->waha->sendText($phone, "Formato no válido. Escribe la hora como HH:MM (ej: 09:00).");
             return;
         }
@@ -126,9 +139,9 @@ class FormFlow
 
     protected function receiveEndTime(Conversation $conversation, string $phone, string $message): void
     {
-        $time = trim($message);
+        $time = $this->normalizeTime(trim($message));
 
-        if (! preg_match('/^\d{1,2}:\d{2}$/', $time)) {
+        if (! $time) {
             $this->waha->sendText($phone, "Formato no válido. Escribe la hora como HH:MM (ej: 13:00).");
             return;
         }
