@@ -72,6 +72,7 @@ class SharePointService
         Log::error('SharePoint: Failed to insert list item', [
             'status' => $response->status(),
             'response' => $response->body(),
+            'fields_sent' => $fields,
         ]);
         return false;
     }
