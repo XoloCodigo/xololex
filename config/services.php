@@ -46,6 +46,10 @@ return [
         'model' => env('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001'),
     ],
 
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+    ],
+
     'microsoft' => [
         'tenant_id' => env('MS_TENANT_ID'),
         'client_id' => env('MS_CLIENT_ID'),

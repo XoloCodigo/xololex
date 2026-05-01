@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AudioTranscriptionService;
 use App\Services\Bot\BotHandler;
 use App\Services\WahaService;
 use Illuminate\Http\Request;
@@ -9,7 +10,7 @@ use Illuminate\Support\Facades\Cache;
 
 class WebhookController extends Controller
 {
-    public function handle(Request $request, BotHandler $handler)
+    public function handle(Request $request, BotHandler $handler, AudioTranscriptionService $audio, WahaService $waha)
     {
         $payload = $request->all();
 
@@ -29,6 +30,21 @@ class WebhookController extends Controller
 
         $phone = WahaService::extractPhone($payload);
         $message = WahaService::extractMessage($payload);
+
+        // Si es audio, transcribir
+        if (WahaService::isAudioMessage($payload)) {
+            $audioUrl = WahaService::extractAudioUrl($payload);
+            if ($audioUrl) {
+                $waha->sendText($phone, "🎙 Transcribiendo tu audio...");
+                $transcribed = $audio->transcribe($audioUrl);
+                if ($transcribed) {
+                    $message = $transcribed;
+                } else {
+                    $waha->sendText($phone, "No pude transcribir el audio. Por favor, escribe tu respuesta.");
+                    return response()->json(['ok' => true]);
+                }
+            }
+        }
 
         if (empty($phone) || empty($message)) {
             return response()->json(['ok' => true]);

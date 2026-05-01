@@ -179,17 +179,17 @@ class FormFlow
         }
 
         $conversation->setStep('form', 'receive_description', ['activity_type' => $types[$option]]);
-        $this->waha->sendText($phone, "Describe brevemente la actividad realizada:");
+        $this->waha->sendText($phone, "Describe brevemente la actividad realizada:\n\n_🎙 Puedes responder con texto o audio_");
     }
 
     protected function receiveDescription(Conversation $conversation, string $phone, string $message): void
     {
         if (trim($message) === '') {
-            $this->waha->sendText($phone, "Describe brevemente la actividad realizada:");
+            $this->waha->sendText($phone, "Describe brevemente la actividad realizada:\n\n_🎙 Puedes responder con texto o audio_");
             return;
         }
         $conversation->setStep('form', 'receive_observations', ['description' => $message]);
-        $this->waha->sendText($phone, "¿Observaciones? (escribe \"ninguna\" si no hay)");
+        $this->waha->sendText($phone, "¿Observaciones? (escribe \"ninguna\" si no hay)\n\n_🎙 Puedes responder con texto o audio_");
     }
 
     protected function receiveObservations(Conversation $conversation, string $phone, string $message): void

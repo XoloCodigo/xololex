@@ -105,4 +105,18 @@ class WahaService
     {
         return trim($payload['payload']['body'] ?? '');
     }
+
+    public static function isAudioMessage(array $payload): bool
+    {
+        $type = $payload['payload']['type'] ?? '';
+        return in_array($type, ['ptt', 'audio', 'voice']) || (
+            ($payload['payload']['hasMedia'] ?? false) === true
+            && str_starts_with($payload['payload']['media']['mimetype'] ?? '', 'audio/')
+        );
+    }
+
+    public static function extractAudioUrl(array $payload): ?string
+    {
+        return $payload['payload']['media']['url'] ?? null;
+    }
 }

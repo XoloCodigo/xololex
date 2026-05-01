@@ -78,13 +78,13 @@ class ReportFlow
         }
 
         $conversation->setStep('report', 'receive_visit_reason', ['visit_date' => $date]);
-        $this->waha->sendText($phone, "¿Cuál fue el motivo de la visita?");
+        $this->waha->sendText($phone, "¿Cuál fue el motivo de la visita?\n\n_🎙 Puedes responder con texto o audio_");
     }
 
     protected function receiveVisitReason(Conversation $conversation, string $phone, string $message): void
     {
         if (trim($message) === '') {
-            $this->waha->sendText($phone, "¿Cuál fue el motivo de la visita?");
+            $this->waha->sendText($phone, "¿Cuál fue el motivo de la visita?\n\n_🎙 Puedes responder con texto o audio_");
             return;
         }
         $conversation->setStep('report', 'receive_contact', ['visit_reason' => $message]);
@@ -108,43 +108,43 @@ class ReportFlow
             return;
         }
         $conversation->setStep('report', 'receive_findings', ['contact_position' => $message]);
-        $this->waha->sendText($phone, "Describe los hallazgos principales de la visita:");
+        $this->waha->sendText($phone, "Describe los hallazgos principales de la visita:\n\n_🎙 Puedes responder con texto o audio_");
     }
 
     protected function receiveFindings(Conversation $conversation, string $phone, string $message): void
     {
         if (trim($message) === '') {
-            $this->waha->sendText($phone, "Describe los hallazgos principales de la visita:");
+            $this->waha->sendText($phone, "Describe los hallazgos principales de la visita:\n\n_🎙 Puedes responder con texto o audio_");
             return;
         }
         $conversation->setStep('report', 'receive_risks', ['findings' => $message]);
-        $this->waha->sendText($phone, "¿Hay riesgos detectados? (escribe \"ninguno\" si no aplica)");
+        $this->waha->sendText($phone, "¿Hay riesgos detectados? (escribe \"ninguno\" si no aplica)\n\n_🎙 Puedes responder con texto o audio_");
     }
 
     protected function receiveRisks(Conversation $conversation, string $phone, string $message): void
     {
         if (trim($message) === '') {
-            $this->waha->sendText($phone, "¿Hay riesgos detectados? (escribe \"ninguno\" si no aplica)");
+            $this->waha->sendText($phone, "¿Hay riesgos detectados? (escribe \"ninguno\" si no aplica)\n\n_🎙 Puedes responder con texto o audio_");
             return;
         }
         $conversation->setStep('report', 'receive_recommendations', ['risks' => $message]);
-        $this->waha->sendText($phone, "¿Cuáles son tus recomendaciones?");
+        $this->waha->sendText($phone, "¿Cuáles son tus recomendaciones?\n\n_🎙 Puedes responder con texto o audio_");
     }
 
     protected function receiveRecommendations(Conversation $conversation, string $phone, string $message): void
     {
         if (trim($message) === '') {
-            $this->waha->sendText($phone, "¿Cuáles son tus recomendaciones?");
+            $this->waha->sendText($phone, "¿Cuáles son tus recomendaciones?\n\n_🎙 Puedes responder con texto o audio_");
             return;
         }
         $conversation->setStep('report', 'receive_observations', ['recommendations' => $message]);
-        $this->waha->sendText($phone, "¿Observaciones adicionales? (escribe \"ninguna\" si no hay)");
+        $this->waha->sendText($phone, "¿Observaciones adicionales? (escribe \"ninguna\" si no hay)\n\n_🎙 Puedes responder con texto o audio_");
     }
 
     protected function receiveObservations(Conversation $conversation, string $phone, string $message): void
     {
         if (trim($message) === '') {
-            $this->waha->sendText($phone, "¿Observaciones adicionales? (escribe \"ninguna\" si no hay)");
+            $this->waha->sendText($phone, "¿Observaciones adicionales? (escribe \"ninguna\" si no hay)\n\n_🎙 Puedes responder con texto o audio_");
             return;
         }
         $data = array_merge($conversation->data ?? [], ['observations' => $message]);
