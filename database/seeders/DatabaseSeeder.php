@@ -22,12 +22,14 @@ class DatabaseSeeder extends Seeder
             'email' => 'ricardo96.mgz@gmail.com',
         ]);
 
-        Lawyer::create([
-            'name' => 'Ricardo (Prueba)',
-            'phone' => '5214271513500',
-            'email' => 'ricardo96.mgz@gmail.com',
-            'is_active' => true,
-        ]);
+        Lawyer::firstOrCreate(
+            ['phone' => '5214271513500'],
+            [
+                'name' => 'Ricardo (Prueba)',
+                'email' => 'ricardo.mejia@xolocodigo.mx',
+                'is_active' => true,
+            ]
+        );
 
         Company::create([
             'name' => 'Empresa Demo',

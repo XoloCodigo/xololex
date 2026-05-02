@@ -105,6 +105,7 @@ class BotHandler
                 'receive_report', 'receive_service_type', 'receive_activity_date',
                 'receive_start_time', 'receive_end_time', 'receive_extra_hours',
                 'receive_activity_type', 'receive_description', 'receive_observations',
+                'receive_client_email',
             ],
         ];
 
@@ -139,6 +140,7 @@ class BotHandler
             'receive_extra_hours' => 'extra_hours',
             'receive_activity_type' => 'activity_type',
             'receive_description' => 'description',
+            'receive_client_email' => 'client_email',
         ];
 
         // Quitar la data del paso actual
