@@ -3,9 +3,7 @@
 namespace App\Services\Bot;
 
 use App\Models\Conversation;
-use App\Models\Lawyer;
 use App\Models\Report;
-use App\Services\OutlookMailService;
 use App\Services\SharePointService;
 use App\Services\WahaService;
 
@@ -14,7 +12,6 @@ class FormFlow
     public function __construct(
         protected WahaService $waha,
         protected SharePointService $sharepoint,
-        protected OutlookMailService $mail,
     ) {}
 
     public function handle(Conversation $conversation, string $phone, string $message): void
@@ -30,7 +27,6 @@ class FormFlow
             'receive_activity_type' => $this->receiveActivityType($conversation, $phone, $message),
             'receive_description' => $this->receiveDescription($conversation, $phone, $message),
             'receive_observations' => $this->receiveObservations($conversation, $phone, $message),
-            'receive_client_email' => $this->receiveClientEmail($conversation, $phone, $message),
             default => $this->askReport($conversation, $phone),
         };
     }
@@ -199,24 +195,7 @@ class FormFlow
     protected function receiveObservations(Conversation $conversation, string $phone, string $message): void
     {
         $observations = strtolower(trim($message)) === 'ninguna' ? '' : $message;
-        $conversation->setStep('form', 'receive_client_email', ['observations' => $observations]);
-        $this->waha->sendText($phone, "¿Quieres enviar copia por correo al cliente?\n\n_Escribe el correo del cliente o \"no\" para omitir_");
-    }
-
-    protected function receiveClientEmail(Conversation $conversation, string $phone, string $message): void
-    {
-        $input = trim($message);
-        $clientEmail = null;
-
-        if (strtolower($input) !== 'no' && $input !== '') {
-            if (! filter_var($input, FILTER_VALIDATE_EMAIL)) {
-                $this->waha->sendText($phone, "El correo no parece válido. Escribe un correo correcto o \"no\" para omitir.");
-                return;
-            }
-            $clientEmail = $input;
-        }
-
-        $data = array_merge($conversation->data ?? [], ['client_email' => $clientEmail]);
+        $data = array_merge($conversation->data ?? [], ['observations' => $observations]);
 
         $this->waha->sendText($phone, "Registrando en SharePoint...");
 
@@ -237,55 +216,12 @@ class FormFlow
 
         $result = $this->sharepoint->insertListItem($fields);
 
-        // Enviar correo si aplica
-        $emailStatus = '';
-        if ($clientEmail && $result) {
-            $emailStatus = $this->sendClientEmail($conversation, $data, $clientEmail)
-                ? "\n✉ Correo enviado a {$clientEmail}"
-                : "\n⚠ No se pudo enviar el correo al cliente";
-        }
-
         $conversation->reset();
 
         if ($result) {
-            $this->waha->sendText($phone, "✓ Formulario registrado en SharePoint para reporte {$data['folio']}\n\n*Resumen:*\n• Empresa: {$data['company_name']}\n• Servicio: {$data['service_type']}\n• Fecha: {$activityDate}\n• Horario: {$data['start_time']} - {$data['end_time']}\n• Duración: {$data['duration']} hrs{$emailStatus}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+            $this->waha->sendText($phone, "✓ Formulario registrado en SharePoint para reporte {$data['folio']}\n\n*Resumen:*\n• Empresa: {$data['company_name']}\n• Servicio: {$data['service_type']}\n• Fecha: {$activityDate}\n• Horario: {$data['start_time']} - {$data['end_time']}\n• Duración: {$data['duration']} hrs\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
         } else {
             $this->waha->sendText($phone, "⚠ Hubo un error al registrar en SharePoint. Los datos se guardaron localmente. Contacta al administrador.\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
         }
-    }
-
-    protected function sendClientEmail(Conversation $conversation, array $data, string $clientEmail): bool
-    {
-        $lawyer = Lawyer::find($conversation->lawyer_id);
-        if (! $lawyer || empty($lawyer->email)) {
-            return false;
-        }
-
-        $report = Report::find($data['report_id']);
-        $attachments = [];
-        if ($report && $report->pdf_path) {
-            $attachments[] = [
-                'name' => "{$report->folio}.pdf",
-                'storage_path' => $report->pdf_path,
-                'contentType' => 'application/pdf',
-            ];
-        }
-
-        $subject = "Reporte de visita {$data['folio']} — {$data['company_name']}";
-        $bodyHtml = "
-            <p>Estimado cliente,</p>
-            <p>Le compartimos el reporte de visita correspondiente a la actividad realizada el {$data['activity_date']}.</p>
-            <ul>
-                <li><strong>Folio:</strong> {$data['folio']}</li>
-                <li><strong>Empresa:</strong> {$data['company_name']}</li>
-                <li><strong>Tipo de servicio:</strong> {$data['service_type']}</li>
-                <li><strong>Horario:</strong> {$data['start_time']} - {$data['end_time']} ({$data['duration']} hrs)</li>
-                <li><strong>Descripción:</strong> {$data['description']}</li>
-            </ul>
-            <p>Adjunto encontrará el reporte completo en formato PDF.</p>
-            <p>Saludos,<br>{$lawyer->name}</p>
-        ";
-
-        return $this->mail->send($lawyer->email, $clientEmail, $subject, $bodyHtml, $attachments);
     }
 }

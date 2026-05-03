@@ -3,8 +3,10 @@
 namespace App\Services\Bot;
 
 use App\Models\Conversation;
+use App\Models\Lawyer;
 use App\Models\Report;
 use App\Services\AiFormatterService;
+use App\Services\OutlookMailService;
 use App\Services\ReportGeneratorService;
 use App\Services\SharePointService;
 use App\Services\WahaService;
@@ -16,6 +18,7 @@ class ReportFlow
         protected ReportGeneratorService $generator,
         protected AiFormatterService $aiFormatter,
         protected SharePointService $sharepoint,
+        protected OutlookMailService $mail,
     ) {}
 
     public function handle(Conversation $conversation, string $phone, string $message): void
@@ -31,6 +34,7 @@ class ReportFlow
             'receive_risks' => $this->receiveRisks($conversation, $phone, $message),
             'receive_recommendations' => $this->receiveRecommendations($conversation, $phone, $message),
             'receive_observations' => $this->receiveObservations($conversation, $phone, $message),
+            'receive_client_email' => $this->receiveClientEmail($conversation, $phone, $message),
             default => $this->askCompany($conversation, $phone),
         };
     }
@@ -182,9 +186,80 @@ class ReportFlow
         }
 
         $conversation->update(['report_id' => $report->id]);
-        $conversation->reset();
+        $conversation->setStep('report', 'receive_client_email', [
+            'report_id' => $report->id,
+            'folio' => $report->folio,
+            'company_name' => $report->company_name,
+            'visit_date' => $report->visit_date->format('Y-m-d'),
+        ]);
 
         $spMsg = $sharepointUrl ? "\n📁 PDF subido a SharePoint" : "";
-        $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado y listo.{$spMsg}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+        $this->waha->sendText($phone, "✓ Reporte {$report->folio} generado.{$spMsg}\n\n¿Quieres enviar este reporte por correo al cliente?\n\n_Escribe el correo del cliente o \"no\" para omitir_");
+    }
+
+    protected function receiveClientEmail(Conversation $conversation, string $phone, string $message): void
+    {
+        $input = trim($message);
+        $clientEmail = null;
+
+        if (strtolower($input) !== 'no' && $input !== '') {
+            if (! filter_var($input, FILTER_VALIDATE_EMAIL)) {
+                $this->waha->sendText($phone, "El correo no parece válido. Escribe un correo correcto o \"no\" para omitir.");
+                return;
+            }
+            $clientEmail = $input;
+        }
+
+        $folio = $conversation->data['folio'] ?? '';
+        $emailStatus = '';
+
+        if ($clientEmail) {
+            $sent = $this->sendClientEmail($conversation, $clientEmail);
+            $emailStatus = $sent
+                ? "\n✉ Correo enviado a {$clientEmail}"
+                : "\n⚠ No se pudo enviar el correo. Verifica con el administrador.";
+        }
+
+        $conversation->reset();
+        $this->waha->sendText($phone, "✓ Reporte {$folio} completado.{$emailStatus}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+    }
+
+    protected function sendClientEmail(Conversation $conversation, string $clientEmail): bool
+    {
+        $lawyer = Lawyer::find($conversation->lawyer_id);
+        if (! $lawyer || empty($lawyer->email)) {
+            return false;
+        }
+
+        $reportId = $conversation->data['report_id'] ?? null;
+        $report = $reportId ? Report::find($reportId) : null;
+        if (! $report) {
+            return false;
+        }
+
+        $attachments = [];
+        if ($report->pdf_path) {
+            $attachments[] = [
+                'name' => "{$report->folio}.pdf",
+                'storage_path' => $report->pdf_path,
+                'contentType' => 'application/pdf',
+            ];
+        }
+
+        $subject = "Reporte de visita {$report->folio} — {$report->company_name}";
+        $bodyHtml = "
+            <p>Estimado cliente,</p>
+            <p>Le compartimos el reporte de visita correspondiente al " . $report->visit_date->format('d/m/Y') . ".</p>
+            <ul>
+                <li><strong>Folio:</strong> {$report->folio}</li>
+                <li><strong>Empresa:</strong> {$report->company_name}</li>
+                <li><strong>Motivo:</strong> {$report->visit_reason}</li>
+                <li><strong>Contacto:</strong> {$report->contact_met} — {$report->contact_position}</li>
+            </ul>
+            <p>Adjunto encontrará el reporte completo en formato PDF.</p>
+            <p>Saludos,<br>{$lawyer->name}</p>
+        ";
+
+        return $this->mail->send($lawyer->email, $clientEmail, $subject, $bodyHtml, $attachments);
     }
 }

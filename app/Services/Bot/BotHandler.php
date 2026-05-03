@@ -100,12 +100,12 @@ class BotHandler
                 'receive_company', 'receive_visit_date', 'receive_visit_reason',
                 'receive_contact', 'receive_contact_position', 'receive_findings',
                 'receive_risks', 'receive_recommendations', 'receive_observations',
+                'receive_client_email',
             ],
             'form' => [
                 'receive_report', 'receive_service_type', 'receive_activity_date',
                 'receive_start_time', 'receive_end_time', 'receive_extra_hours',
                 'receive_activity_type', 'receive_description', 'receive_observations',
-                'receive_client_email',
             ],
         ];
 
