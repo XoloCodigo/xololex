@@ -186,15 +186,23 @@ class ReportFlow
         }
 
         $conversation->update(['report_id' => $report->id]);
-        $conversation->setStep('report', 'receive_client_email', [
-            'report_id' => $report->id,
-            'folio' => $report->folio,
-            'company_name' => $report->company_name,
-            'visit_date' => $report->visit_date->format('Y-m-d'),
-        ]);
 
+        $lawyer = Lawyer::find($conversation->lawyer_id);
         $spMsg = $sharepointUrl ? "\n📁 PDF subido a SharePoint" : "";
-        $this->waha->sendText($phone, "✓ Reporte {$report->folio} generado.{$spMsg}\n\n¿Quieres enviar este reporte por correo al cliente?\n\n_Escribe el correo del cliente o \"no\" para omitir_");
+
+        // Solo ofrecer envío de correo si el abogado tiene email corporativo configurado
+        if ($lawyer && ! empty($lawyer->email)) {
+            $conversation->setStep('report', 'receive_client_email', [
+                'report_id' => $report->id,
+                'folio' => $report->folio,
+                'company_name' => $report->company_name,
+                'visit_date' => $report->visit_date->format('Y-m-d'),
+            ]);
+            $this->waha->sendText($phone, "✓ Reporte {$report->folio} generado.{$spMsg}\n\n¿Quieres enviar este reporte por correo al cliente?\n\n_Escribe el correo del cliente o \"no\" para omitir_");
+        } else {
+            $conversation->reset();
+            $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado.{$spMsg}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+        }
     }
 
     protected function receiveClientEmail(Conversation $conversation, string $phone, string $message): void
