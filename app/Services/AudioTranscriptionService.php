@@ -12,8 +12,8 @@ class AudioTranscriptionService
 
     public function __construct()
     {
-        $this->openaiKey = config('services.openai.api_key', '');
-        $this->wahaKey = config('services.waha.api_key', '');
+        $this->openaiKey = (string) config('services.openai.api_key', '');
+        $this->wahaKey = (string) config('services.waha.api_key', '');
     }
 
     public function transcribe(string $audioUrl): ?string
