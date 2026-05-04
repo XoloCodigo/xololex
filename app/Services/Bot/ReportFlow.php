@@ -155,25 +155,35 @@ class ReportFlow
 
         $this->waha->sendText($phone, "Formateando y generando tu reporte...");
 
-        $data = $this->aiFormatter->formatReport($data);
+        try {
+            $data = $this->aiFormatter->formatReport($data);
 
-        $report = Report::create([
-            'folio' => Report::generateFolio(),
-            'lawyer_id' => $conversation->lawyer_id,
-            'company_name' => $data['company_name'],
-            'visit_reason' => $data['visit_reason'],
-            'contact_met' => $data['contact_met'],
-            'contact_position' => $data['contact_position'],
-            'findings' => $data['findings'],
-            'risks' => $data['risks'],
-            'recommendations' => $data['recommendations'],
-            'observations' => $data['observations'],
-            'visit_date' => $data['visit_date'],
-            'status' => 'completed',
-        ]);
+            $report = Report::create([
+                'folio' => Report::generateFolio(),
+                'lawyer_id' => $conversation->lawyer_id,
+                'company_name' => $data['company_name'],
+                'visit_reason' => $data['visit_reason'],
+                'contact_met' => $data['contact_met'],
+                'contact_position' => $data['contact_position'],
+                'findings' => $data['findings'],
+                'risks' => $data['risks'],
+                'recommendations' => $data['recommendations'],
+                'observations' => $data['observations'],
+                'visit_date' => $data['visit_date'],
+                'status' => 'completed',
+            ]);
 
-        $paths = $this->generator->generate($report);
-        $report->update($paths);
+            $paths = $this->generator->generate($report);
+            $report->update($paths);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Report generation failed', [
+                'error' => $e->getMessage(),
+                'lawyer_id' => $conversation->lawyer_id,
+            ]);
+            $conversation->reset();
+            $this->waha->sendText($phone, "⚠ Hubo un error al generar el reporte. Por favor, intenta de nuevo escribiendo \"hola\".");
+            return;
+        }
 
         $pdfUrl = asset('storage/' . $report->pdf_path);
         $this->waha->sendDocument($phone, $pdfUrl, "Reporte_{$report->folio}.pdf", "Reporte {$report->folio} generado.");
