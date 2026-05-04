@@ -151,7 +151,19 @@ class ReportFlow
             $this->waha->sendText($phone, "¿Observaciones adicionales? (escribe \"ninguna\" si no hay)\n\n_🎙 Puedes responder con texto o audio_");
             return;
         }
-        $data = array_merge($conversation->data ?? [], ['observations' => $message]);
+
+        // Si ya estaba en este step y faltan datos previos, la conversación está corrupta
+        $existing = $conversation->data ?? [];
+        $required = ['company_name', 'visit_date', 'visit_reason', 'contact_met', 'contact_position', 'findings'];
+        foreach ($required as $field) {
+            if (empty($existing[$field])) {
+                $conversation->reset();
+                $this->waha->sendText($phone, "⚠ La conversación quedó incompleta. Por favor, vuelve a iniciar escribiendo \"hola\".");
+                return;
+            }
+        }
+
+        $data = array_merge($existing, ['observations' => $message]);
 
         $this->waha->sendText($phone, "Formateando y generando tu reporte...");
 
