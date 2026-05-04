@@ -21,6 +21,18 @@ class ReportFlow
         protected OutlookMailService $mail,
     ) {}
 
+    protected const FIELDS_FOR_SUMMARY = [
+        'company_name'      => 'Empresa',
+        'visit_date'        => 'Fecha de visita',
+        'visit_reason'      => 'Motivo',
+        'contact_met'       => 'Contacto',
+        'contact_position'  => 'Puesto',
+        'findings'          => 'Hallazgos',
+        'risks'             => 'Riesgos',
+        'recommendations'   => 'Recomendaciones',
+        'observations'      => 'Observaciones',
+    ];
+
     public function handle(Conversation $conversation, string $phone, string $message): void
     {
         match ($conversation->step) {
@@ -34,7 +46,11 @@ class ReportFlow
             'receive_risks' => $this->receiveRisks($conversation, $phone, $message),
             'receive_recommendations' => $this->receiveRecommendations($conversation, $phone, $message),
             'receive_observations' => $this->receiveObservations($conversation, $phone, $message),
+            'confirm_summary' => $this->confirmSummary($conversation, $phone, $message),
+            'receive_edit_value' => $this->receiveEditValue($conversation, $phone, $message),
+            'confirm_pdf' => $this->confirmPdf($conversation, $phone, $message),
             'receive_client_email' => $this->receiveClientEmail($conversation, $phone, $message),
+            'confirm_email' => $this->confirmEmail($conversation, $phone, $message),
             default => $this->askCompany($conversation, $phone),
         };
     }
@@ -165,25 +181,155 @@ class ReportFlow
 
         $data = array_merge($existing, ['observations' => $message]);
 
-        $this->waha->sendText($phone, "Formateando y generando tu reporte...");
+        $this->waha->sendText($phone, "Formateando tu reporte con IA...");
 
         try {
             $data = $this->aiFormatter->formatReport($data);
-
-            $report = Report::create([
-                'folio' => Report::generateFolio(),
-                'lawyer_id' => $conversation->lawyer_id,
-                'company_name' => $data['company_name'],
-                'visit_reason' => $data['visit_reason'],
-                'contact_met' => $data['contact_met'],
-                'contact_position' => $data['contact_position'],
-                'findings' => $data['findings'],
-                'risks' => $data['risks'],
-                'recommendations' => $data['recommendations'],
-                'observations' => $data['observations'],
-                'visit_date' => $data['visit_date'],
-                'status' => 'completed',
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('AI formatting failed, using raw text', [
+                'error' => $e->getMessage(),
             ]);
+        }
+
+        $conversation->update([
+            'step' => 'confirm_summary',
+            'data' => $data,
+        ]);
+
+        $this->showSummary($conversation->fresh(), $phone);
+    }
+
+    protected function showSummary(Conversation $conversation, string $phone): void
+    {
+        $data = $conversation->data ?? [];
+        $lines = ["📋 *Resumen del reporte*", ""];
+        $i = 1;
+        foreach (self::FIELDS_FOR_SUMMARY as $key => $label) {
+            $value = $data[$key] ?? '';
+            if ($key === 'visit_date' && $value) {
+                try {
+                    $value = \Carbon\Carbon::parse($value)->format('d/m/Y');
+                } catch (\Throwable $e) {
+                    // keep raw
+                }
+            }
+            $lines[] = "*{$i}. {$label}:*\n{$value}";
+            $i++;
+        }
+        $lines[] = "";
+        $lines[] = "✅ Escribe *aprobar* para generar el PDF";
+        $lines[] = "✏️ Escribe el *número* del campo a corregir";
+
+        $this->waha->sendText($phone, implode("\n", $lines));
+    }
+
+    protected function confirmSummary(Conversation $conversation, string $phone, string $message): void
+    {
+        $msg = strtolower(trim($message));
+
+        if (in_array($msg, ['aprobar', 'aprobado', 'ok', 'si', 'sí', 'aprueba', 'apruebo'], true)) {
+            $this->generateAndPreviewPdf($conversation, $phone);
+            return;
+        }
+
+        if (preg_match('/^\d+$/', $msg)) {
+            $num = (int) $msg;
+            $keys = array_keys(self::FIELDS_FOR_SUMMARY);
+            if ($num < 1 || $num > count($keys)) {
+                $this->waha->sendText($phone, "Número fuera de rango. Escribe un número del 1 al " . count($keys) . " o *aprobar*.");
+                return;
+            }
+            $field = $keys[$num - 1];
+            $label = self::FIELDS_FOR_SUMMARY[$field];
+
+            $data = $conversation->data ?? [];
+            $data['editing_field'] = $field;
+            $conversation->update(['step' => 'receive_edit_value', 'data' => $data]);
+
+            $hint = $field === 'visit_date' ? "\n\n_Formato: dd/mm/aaaa o \"hoy\"_" : '';
+            $this->waha->sendText($phone, "Escribe el nuevo valor para *{$label}*:{$hint}");
+            return;
+        }
+
+        $this->waha->sendText($phone, "No entendí la opción. Escribe *aprobar* o el *número* del campo a editar.");
+    }
+
+    protected function receiveEditValue(Conversation $conversation, string $phone, string $message): void
+    {
+        $value = trim($message);
+        if ($value === '') {
+            $this->waha->sendText($phone, "Escribe un valor para el campo seleccionado.");
+            return;
+        }
+
+        $data = $conversation->data ?? [];
+        $field = $data['editing_field'] ?? null;
+        if (! $field) {
+            $conversation->update(['step' => 'confirm_summary']);
+            $this->showSummary($conversation->fresh(), $phone);
+            return;
+        }
+
+        // Validación especial para fecha
+        if ($field === 'visit_date') {
+            $low = strtolower($value);
+            if ($low === 'hoy') {
+                $value = now()->format('Y-m-d');
+            } else {
+                try {
+                    $value = \Carbon\Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+                } catch (\Throwable $e) {
+                    $this->waha->sendText($phone, "Formato no válido. Usa dd/mm/aaaa o escribe \"hoy\".");
+                    return;
+                }
+            }
+        }
+
+        $data[$field] = $value;
+        unset($data['editing_field']);
+        $conversation->update(['step' => 'confirm_summary', 'data' => $data]);
+
+        $this->waha->sendText($phone, "✓ Campo actualizado.");
+        $this->showSummary($conversation->fresh(), $phone);
+    }
+
+    protected function generateAndPreviewPdf(Conversation $conversation, string $phone): void
+    {
+        $data = $conversation->data ?? [];
+
+        $this->waha->sendText($phone, "Generando PDF para revisión...");
+
+        try {
+            // Si ya hay un report_id (regeneración tras edición), reutilizar el folio
+            $existingReportId = $data['report_id'] ?? null;
+            if ($existingReportId && ($report = Report::find($existingReportId))) {
+                $report->update([
+                    'company_name' => $data['company_name'],
+                    'visit_reason' => $data['visit_reason'],
+                    'contact_met' => $data['contact_met'],
+                    'contact_position' => $data['contact_position'],
+                    'findings' => $data['findings'],
+                    'risks' => $data['risks'],
+                    'recommendations' => $data['recommendations'],
+                    'observations' => $data['observations'],
+                    'visit_date' => $data['visit_date'],
+                ]);
+            } else {
+                $report = Report::create([
+                    'folio' => Report::generateFolio(),
+                    'lawyer_id' => $conversation->lawyer_id,
+                    'company_name' => $data['company_name'],
+                    'visit_reason' => $data['visit_reason'],
+                    'contact_met' => $data['contact_met'],
+                    'contact_position' => $data['contact_position'],
+                    'findings' => $data['findings'],
+                    'risks' => $data['risks'],
+                    'recommendations' => $data['recommendations'],
+                    'observations' => $data['observations'],
+                    'visit_date' => $data['visit_date'],
+                    'status' => 'draft',
+                ]);
+            }
 
             $paths = $this->generator->generate($report);
             $report->update($paths);
@@ -193,65 +339,131 @@ class ReportFlow
                 'lawyer_id' => $conversation->lawyer_id,
             ]);
             $conversation->reset();
-            $this->waha->sendText($phone, "⚠ Hubo un error al generar el reporte. Por favor, intenta de nuevo escribiendo \"hola\".");
+            $this->waha->sendText($phone, "⚠ Hubo un error al generar el reporte. Vuelve a iniciar escribiendo \"hola\".");
             return;
         }
 
         $pdfUrl = asset('storage/' . $report->pdf_path);
-        $this->waha->sendDocument($phone, $pdfUrl, "Reporte_{$report->folio}.pdf", "Reporte {$report->folio} generado.");
+        $this->waha->sendDocument($phone, $pdfUrl, "Reporte_{$report->folio}.pdf", "Vista previa del reporte {$report->folio}");
 
-        // Subir PDF y Word a SharePoint
+        $data['report_id'] = $report->id;
+        $data['folio'] = $report->folio;
+        $conversation->update([
+            'step' => 'confirm_pdf',
+            'data' => $data,
+            'report_id' => $report->id,
+        ]);
+
+        $this->waha->sendText($phone, "¿El reporte está correcto?\n\n✅ Escribe *subir* para subirlo a SharePoint\n✏️ Escribe *editar* para corregir algún campo");
+    }
+
+    protected function confirmPdf(Conversation $conversation, string $phone, string $message): void
+    {
+        $msg = strtolower(trim($message));
+
+        if (in_array($msg, ['subir', 'si', 'sí', 'ok', 'aprobar', 'subelo', 'súbelo'], true)) {
+            $this->uploadAndAskEmail($conversation, $phone);
+            return;
+        }
+
+        if (in_array($msg, ['editar', 'corregir', 'no', 'atras', 'atrás'], true)) {
+            $conversation->update(['step' => 'confirm_summary']);
+            $this->showSummary($conversation->fresh(), $phone);
+            return;
+        }
+
+        $this->waha->sendText($phone, "No entendí. Escribe *subir* para subir el PDF o *editar* para corregirlo.");
+    }
+
+    protected function uploadAndAskEmail(Conversation $conversation, string $phone): void
+    {
+        $data = $conversation->data ?? [];
+        $report = Report::find($data['report_id'] ?? null);
+        if (! $report) {
+            $conversation->reset();
+            $this->waha->sendText($phone, "⚠ No se encontró el reporte. Vuelve a iniciar.");
+            return;
+        }
+
+        $this->waha->sendText($phone, "Subiendo a SharePoint...");
+
         $sharepointUrl = $this->sharepoint->uploadFile($report->pdf_path, "{$report->folio}.pdf");
         $this->sharepoint->uploadFile($report->word_path, "{$report->folio}.docx");
         if ($sharepointUrl) {
-            $report->update(['sharepoint_url' => $sharepointUrl]);
+            $report->update(['sharepoint_url' => $sharepointUrl, 'status' => 'completed']);
+        } else {
+            $report->update(['status' => 'completed']);
         }
 
-        $conversation->update(['report_id' => $report->id]);
+        $spMsg = $sharepointUrl ? "📁 PDF subido a SharePoint" : "⚠ No se pudo subir a SharePoint";
 
         $lawyer = Lawyer::find($conversation->lawyer_id);
-        $spMsg = $sharepointUrl ? "\n📁 PDF subido a SharePoint" : "";
-
-        // Solo ofrecer envío de correo si el abogado tiene email corporativo configurado
         if ($lawyer && ! empty($lawyer->email)) {
-            $conversation->setStep('report', 'receive_client_email', [
-                'report_id' => $report->id,
-                'folio' => $report->folio,
-                'company_name' => $report->company_name,
-                'visit_date' => $report->visit_date->format('Y-m-d'),
-            ]);
-            $this->waha->sendText($phone, "✓ Reporte {$report->folio} generado.{$spMsg}\n\n¿Quieres enviar este reporte por correo al cliente?\n\n_Escribe el correo del cliente o \"no\" para omitir_");
+            $conversation->update(['step' => 'receive_client_email']);
+            $this->waha->sendText($phone, "✓ Reporte {$report->folio} listo.\n{$spMsg}\n\n¿Quieres enviar este reporte por correo al cliente?\n\n_Escribe el correo del cliente o \"no\" para omitir_");
         } else {
             $conversation->reset();
-            $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado.{$spMsg}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+            $this->waha->sendText($phone, "✓ Reporte {$report->folio} completado.\n{$spMsg}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
         }
     }
 
     protected function receiveClientEmail(Conversation $conversation, string $phone, string $message): void
     {
         $input = trim($message);
-        $clientEmail = null;
 
-        if (strtolower($input) !== 'no' && $input !== '') {
-            if (! filter_var($input, FILTER_VALIDATE_EMAIL)) {
-                $this->waha->sendText($phone, "El correo no parece válido. Escribe un correo correcto o \"no\" para omitir.");
+        if (strtolower($input) === 'no' || $input === '') {
+            $folio = $conversation->data['folio'] ?? '';
+            $conversation->reset();
+            $this->waha->sendText($phone, "✓ Reporte {$folio} completado sin envío de correo.\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+            return;
+        }
+
+        if (! filter_var($input, FILTER_VALIDATE_EMAIL)) {
+            $this->waha->sendText($phone, "El correo no parece válido. Escribe un correo correcto o *no* para omitir.");
+            return;
+        }
+
+        $data = $conversation->data ?? [];
+        $data['client_email'] = $input;
+        $conversation->update(['step' => 'confirm_email', 'data' => $data]);
+
+        $this->waha->sendText($phone, "¿Es correcto este correo?\n\n📧 *{$input}*\n\n✅ Escribe *si* para enviar\n✏️ Escribe *no* para corregir");
+    }
+
+    protected function confirmEmail(Conversation $conversation, string $phone, string $message): void
+    {
+        $msg = strtolower(trim($message));
+
+        if (in_array($msg, ['si', 'sí', 'ok', 'enviar', 'correcto', 'aprobar'], true)) {
+            $clientEmail = $conversation->data['client_email'] ?? null;
+            $folio = $conversation->data['folio'] ?? '';
+
+            if (! $clientEmail) {
+                $conversation->reset();
+                $this->waha->sendText($phone, "⚠ No hay correo registrado. Vuelve a iniciar.");
                 return;
             }
-            $clientEmail = $input;
-        }
 
-        $folio = $conversation->data['folio'] ?? '';
-        $emailStatus = '';
-
-        if ($clientEmail) {
+            $this->waha->sendText($phone, "Enviando correo...");
             $sent = $this->sendClientEmail($conversation, $clientEmail);
             $emailStatus = $sent
-                ? "\n✉ Correo enviado a {$clientEmail}"
-                : "\n⚠ No se pudo enviar el correo. Verifica con el administrador.";
+                ? "✉ Correo enviado a {$clientEmail}"
+                : "⚠ No se pudo enviar el correo. Verifica con el administrador.";
+
+            $conversation->reset();
+            $this->waha->sendText($phone, "✓ Reporte {$folio} completado.\n{$emailStatus}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+            return;
         }
 
-        $conversation->reset();
-        $this->waha->sendText($phone, "✓ Reporte {$folio} completado.{$emailStatus}\n\n¿Necesitas algo más? Escribe \"hola\" para ver el menú.");
+        if (in_array($msg, ['no', 'corregir', 'editar'], true)) {
+            $data = $conversation->data ?? [];
+            unset($data['client_email']);
+            $conversation->update(['step' => 'receive_client_email', 'data' => $data]);
+            $this->waha->sendText($phone, "Escribe nuevamente el correo del cliente o *no* para omitir el envío.");
+            return;
+        }
+
+        $this->waha->sendText($phone, "No entendí. Escribe *si* para enviar o *no* para corregir el correo.");
     }
 
     protected function sendClientEmail(Conversation $conversation, string $clientEmail): bool
